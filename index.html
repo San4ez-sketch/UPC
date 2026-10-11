@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>UPC - Ultra PC OS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; outline: none; }
+  body { height: 100vh; overflow: hidden; background: #000; color: #fff; user-select: none; }
+
+  /* ЗАГРУЗКА И ВЫКЛЮЧЕНИЕ */
+  #boot-screen, #shutdown-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99999; display: none; flex-direction: column; align-items: center; justify-content: center; }
+  #boot-screen.active { display: flex; }
+  #shutdown-screen.active { display: flex; animation: fadeIn 1s; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  
+  .boot-logo-text { font-size: 60px; font-weight: 900; letter-spacing: 5px; color: #fff; animation: runText 2s ease-in-out infinite alternate; margin-bottom: 30px; }
+  @keyframes runText { from { transform: skewX(-10deg) translateX(-20px); opacity: 0.7; } to { transform: skewX(10deg) translateX(20px); opacity: 1; text-shadow: 0 0 20px #00d4ff; } }
+  .gear-container { position: relative; width: 100px; height: 100px; display: none; }
+  .gear-svg { width: 100%; height: 100%; fill: #444; animation: spinGear 4s linear infinite; transition: fill 2s, filter 2s; }
+  .gear-svg.burning { fill: #ff9500; filter: drop-shadow(0 0 15px #ff4500) drop-shadow(0 0 30px #ffae00); }
+  @keyframes spinGear { 100% { transform: rotate(360deg); } }
+  .shutdown-text { font-size: 24px; color: #888; margin-top: 20px; }
+
+  /* ВХОД */
+  #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 99998; display: none; flex-direction: column; align-items: center; justify-content: center; }
+  #login-screen.active { display: flex; }
+  .login-box { background: rgba(20,20,30,0.8); padding: 40px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); text-align: center; width: 350px; backdrop-filter: blur(10px); }
+  .login-box h2 { margin-bottom: 20px; color: #00d4ff; }
+  .login-input, .account-select { width: 100%; padding: 12px; margin-bottom: 15px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px; font-size: 14px; }
+  .login-btn { width: 100%; padding: 12px; background: #ff9500; color: #000; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; margin-bottom: 10px; transition: 0.2s; font-size: 14px; }
+  .login-btn:hover { background: #ffad33; }
+  .skip-login { font-size: 12px; color: #888; cursor: pointer; text-decoration: underline; }
+
+  /* РАБОЧИЙ СТОЛ */
+  #desktop-area { position: relative; width: 100%; height: 100vh; background: linear-gradient(135deg, #0a0a14, #141428, #0d1a2e); background-size: cover; display: none; }
+  #desktop-area.active { display: block; }
+  
+  .topbar { position: absolute; top: 0; left: 0; right: 0; height: 36px; background: rgba(10,10,20,0.7); backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 13px; z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .user-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(255,255,255,0.1); margin-left: 10px; }
+  .user-badge.private { background: linear-gradient(90deg, #ff9500, #ff5e00); color: #000; font-weight: bold; box-shadow: 0 0 10px rgba(255,149,0,0.3); }
+
+  /* КНОПКА ВЫКЛЮЧЕНИЯ */
+  .power-btn {
+    position: fixed; bottom: 20px; left: 20px;
+    width: 45px; height: 45px; border-radius: 50%;
+    background: rgba(255, 59, 48, 0.8); border: 1px solid rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 1001; transition: all 0.3s;
+    backdrop-filter: blur(10px);
+  }
+  .power-btn:hover { background: #ff3b30; transform: scale(1.1); box-shadow: 0 0 15px rgba(255, 59, 48, 0.5); }
+  .power-btn svg { width: 24px; height: 24px; fill: #fff; }
+
+  /* ДОК */
+  .dock { position: fixed; right: 15px; top: 50%; transform: translateY(-50%); background: rgba(15,15,25,0.3); backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; padding: 15px 8px; display: flex; flex-direction: column; gap: 15px; z-index: 1000; transition: all 0.4s ease; }
+  .dock.hidden { opacity: 0; pointer-events: none; transform: translateY(-50%) translateX(50px); }
+  .dock-item { width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; background: rgba(37,37,53,0.7); border: 1px solid rgba(255,255,255,0.1); position: relative; }
+  .dock-item svg { width: 26px; height: 26px; fill: #fff; transition: fill 0.2s; }
+  .dock-item:hover { transform: translateX(-10px) scale(1.1); border-color: #00d4ff; background: rgba(37,37,53,0.95); }
+  .dock-item:hover svg { fill: #00d4ff; }
+  .dock-item .label { position: absolute; right: 65px; top: 50%; transform: translateY(-50%); font-size: 11px; opacity: 0; white-space: nowrap; background: rgba(0,0,0,0.9); padding: 4px 10px; border-radius: 4px; pointer-events: none; color: #fff; transition: 0.2s; }
+  .dock-item:hover .label { opacity: 1; }
+
+  /* ОКНА */
+  .window { position: absolute; background: rgba(20,20,30,0.95); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; min-width: 500px; min-height: 350px; box-shadow: 0 20px 60px rgba(0,0,0,0.7); display: none; flex-direction: column; overflow: hidden; animation: popIn 0.2s ease-out; }
+  @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .window.active { display: flex; }
+  .window.maximized { top: 36px !important; left: 0 !important; width: 100vw !important; height: calc(100vh - 36px) !important; border-radius: 0; }
+  .window-header { height: 42px; background: rgba(0,0,0,0.6); display: flex; align-items: center; padding: 0 15px; cursor: move; border-bottom: 1px solid rgba(255,255,255,0.05); position: relative; }
+  .btn-close { width: 14px; height: 14px; border-radius: 50%; background: #ff9500; cursor: pointer; transition: 0.2s; }
+  .btn-close:hover { background: #ffad33; }
+  .btn-min { width: 14px; height: 14px; border-radius: 50%; background: #ff3b30; cursor: pointer; position: absolute; left: 50%; transform: translateX(-50%); transition: 0.2s; }
+  .btn-min:hover { background: #ff5c52; }
+  .btn-expand { width: 24px; height: 24px; border-radius: 50%; background: #fff; color: #000; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 13px; cursor: pointer; margin-left: auto; transition: 0.2s; }
+  .btn-expand:hover { background: #e0e0e0; }
+  .window-title { position: absolute; left: 50%; transform: translateX(-50%); top: 12px; font-size: 11px; opacity: 0.5; letter-spacing: 1px; text-transform: uppercase; pointer-events: none; }
+  .window-body { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+  .window-footer { padding: 8px; text-align: center; font-size: 10px; opacity: 0.4; border-top: 1px solid rgba(255,255,255,0.05); }
+
+  /* КОНТЕКСТНОЕ МЕНЮ */
+  #context-menu { position: absolute; display: none; background: rgba(20,20,30,0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 5px; width: 200px; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  .ctx-item { padding: 10px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 8px; transition: 0.1s; }
+  .ctx-item:hover { background: rgba(255,255,255,0.1); }
+  .ctx-shortcut { margin-left: auto; font-size: 10px; opacity: 0.5; }
+
+  /* УВЕДОМЛЕНИЯ */
+  #toast-container { position: fixed; top: 50px; right: 20px; z-index: 10001; display: flex; flex-direction: column; gap: 10px; }
+  .toast { background: rgba(20,20,30,0.95); border-left: 4px solid #00d4ff; padding: 15px 20px; border-radius: 4px; width: 300px; animation: slideIn 0.3s ease-out; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* MVC Editor */
+  .mvc-container { display: flex; flex-direction: column; height: 100%; }
+  .mvc-toolbar { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+  .mvc-toolbar select, .mvc-toolbar button { background: #111; color: #fff; border: 1px solid #333; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+  .mvc-toolbar button:hover { background: #222; }
+  .mvc-toolbar button.run-btn { background: #4ade80; color: #000; font-weight: bold; border: none; }
+  .mvc-toolbar button.run-btn:hover { background: #6ee7a3; }
+  .mvc-editor { display: flex; flex: 1; background: #1e1e1e; border-radius: 4px; overflow: hidden; border: 1px solid #333; }
+  .mvc-lines { width: 45px; background: #252526; color: #858585; text-align: right; padding: 10px 8px; font-family: 'Consolas', monospace; font-size: 14px; line-height: 1.6; user-select: none; border-right: 1px solid #333; }
+  .mvc-code-area { flex: 1; background: transparent; color: #d4d4d4; border: none; resize: none; padding: 10px; font-family: 'Consolas', monospace; font-size: 14px; line-height: 1.6; white-space: pre; overflow: auto; tab-size: 2; }
+
+  /* Папки и файлы */
+  .desktop-folder { position: absolute; width: 85px; text-align: center; cursor: pointer; padding: 8px; border-radius: 8px; transition: background 0.2s; }
+  .desktop-folder:hover { background: rgba(255,255,255,0.1); }
+  .desktop-folder .folder-icon { font-size: 42px; margin-bottom: 5px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+  .desktop-folder .folder-name { font-size: 11px; text-shadow: 0 1px 3px rgba(0,0,0,0.9); word-wrap: break-word; background: rgba(0,0,0,0.5); border-radius: 4px; padding: 3px 5px; }
+  .file-list { display: flex; flex-direction: column; gap: 5px; }
+  .file-item { display: flex; align-items: center; gap: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer; transition: 0.2s; }
+  .file-item:hover { background: rgba(0,212,255,0.1); }
+  .file-icon { font-size: 20px; }
+
+  /* BitRive Browser */
+  .browser-frame { width: 100%; height: 100%; border: none; border-radius: 4px; background: #fff; }
+  .browser-bar { display: flex; gap: 10px; margin-bottom: 10px; }
+  .browser-bar input { flex: 1; padding: 8px 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; }
+  .browser-bar button { padding: 8px 16px; background: #00d4ff; color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+  .browser-bar button:hover { background: #33ddff; }
+  .quick-links { display: flex; gap: 5px; margin-bottom: 10px; flex-wrap: wrap; }
+  .quick-links button { padding: 5px 10px; background: rgba(255,255,255,0.1); border: none; color: #fff; border-radius: 4px; cursor: pointer; font-size: 11px; transition: 0.2s; }
+  .quick-links button:hover { background: rgba(0,212,255,0.3); }
+
+  /* Вкладки */
+  .tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+  .tab { padding: 6px 14px; background: rgba(255,255,255,0.05); border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.2s; }
+  .tab:hover { background: rgba(255,255,255,0.1); }
+  .tab.active { background: #00d4ff; color: #000; font-weight: bold; }
+
+  /* Галерея */
+  .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+  .media-item { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.05); cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+  .media-item:hover { border-color: #00d4ff; transform: scale(1.05); }
+  .media-item img, .media-item video { width: 100%; height: 100%; object-fit: cover; }
+  .media-type-label { position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+
+  /* Модальное окно медиа */
+  .media-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10000; display: none; align-items: center; justify-content: center; flex-direction: column; }
+  .media-modal.active { display: flex; }
+  .media-modal-content { max-width: 90%; max-height: 80%; border-radius: 8px; box-shadow: 0 0 30px rgba(0,212,255,0.3); }
+  .media-modal-close { position: absolute; top: 30px; right: 30px; background: #ff3b30; color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+  .media-modal-close:hover { background: #ff5c52; }
+
+  /* SYSTEM */
+  .setting-group { margin-bottom: 20px; }
+  .setting-group h3 { color: #00d4ff; font-size: 13px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  .wp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .wp-opt { height: 50px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+  .wp-opt:hover { border-color: #00d4ff; }
+  .wp-opt.selected { border-color: #ff9500; }
+  .upload-btn { display: block; padding: 10px; background: rgba(255,149,0,0.1); border: 1px dashed #ff9500; color: #ff9500; text-align: center; border-radius: 4px; cursor: pointer; margin-top: 10px; font-size: 12px; transition: 0.2s; }
+  .upload-btn:hover { background: rgba(255,149,0,0.2); }
+  .form-input { width: 100%; padding: 10px; margin: 5px 0; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; }
+  .form-btn { width: 100%; padding: 12px; background: #ff9500; color: #000; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+  .form-btn:hover { background: #ffad33; }
+
+  /* Прогресс бар установки */
+  .install-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 100; border-radius: 8px; }
+  .progress-bar { width: 200px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .progress-fill { height: 100%; background: #00d4ff; width: 0%; transition: width 0.2s; }
+</style>
+</head>
+<body>
+
+<!-- ЭКРАН ЗАГРУЗКИ -->
+<div id="boot-screen" class="active">
+  <div class="boot-logo-text">UPC</div>
+  <div class="gear-container" id="gearLogo">
+    <svg class="gear-svg" viewBox="0 0 24 24"><path d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.98C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.98L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.98Z"/></svg>
+  </div>
+</div>
+
+<!-- ЭКРАН ВЫКЛЮЧЕНИЯ -->
+<div id="shutdown-screen">
+  <div class="boot-logo-text" style="animation: none; opacity: 0.5;">UPC</div>
+  <div class="shutdown-text">Shutting down...</div>
+</div>
+
+<!-- ЭКРАН ВХОДА -->
+<div id="login-screen">
+  <div class="login-box">
+    <h2>UPC Login</h2>
+    <form id="loginForm" onsubmit="return false;">
+      <select id="accountType" class="account-select">
+        <option value="standard">Standard Account</option>
+        <option value="private">[LOCK] Gear Private</option>
+      </select>
+      <input type="text" id="loginNick" class="login-input" placeholder="Nickname" autocomplete="off">
+      <input type="password" id="loginPass" class="login-input" placeholder="Password" autocomplete="off">
+      <button type="button" class="login-btn" id="loginBtn">Login</button>
+    </form>
+    <div class="skip-login" id="guestBtn">Enter as Guest</div>
+  </div>
+</div>
+
+<!-- РАБОЧИЙ СТОЛ -->
+<div id="desktop-area">
+  <div id="toast-container"></div>
+  <div class="topbar">
+    <div style="display:flex; align-items:center;">
+      <span style="font-weight:900; color:#00d4ff;">[UPC] UPC OS</span>
+      <span id="userBadge" class="user-badge">Guest</span>
+    </div>
+    <div id="clock">--:--</div>
+  </div>
+
+  <!-- КНОПКА ВЫКЛЮЧЕНИЯ -->
+  <div class="power-btn" onclick="shutdownOS()" title="Power Off">
+    <svg viewBox="0 0 24 24"><path d="M16.56,5.44L15.11,6.89C16.84,7.94 18,9.83 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12C6,9.83 7.16,7.94 8.88,6.88L7.44,5.44C5.36,6.88 4,9.28 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12C20,9.28 18.64,6.88 16.56,5.44M13,3H11V13H13"/></svg>
+  </div>
+
+  <div id="context-menu">
+    <div class="ctx-item" onclick="location.reload(); hideContext();">[R] Refresh</div>
+    <div class="ctx-item" onclick="createFolder(); hideContext();">[F] New Folder</div>
+    <div class="ctx-item" onclick="openWin('mvc'); hideContext();">[C] Open MVC</div>
+    <div class="ctx-item" onclick="openWin('system'); hideContext();">[S] System Settings</div>
+  </div>
+
+  <div class="media-modal" id="mediaModal">
+    <button class="media-modal-close" onclick="closeMediaModal()">X</button>
+    <div id="mediaModalContent"></div>
+  </div>
+
+  <!-- MultiVisionCode (MVC) -->
+  <div class="window" id="win-mvc" style="top:50px; left:50px; width: 750px; height: 550px;">
+    <div class="window-header">
+      <div class="btn-close" onclick="closeWin('mvc')"></div>
+      <div class="btn-min" onclick="minimizeWin('mvc')"></div>
+      <div class="btn-expand" onclick="maximizeWin('mvc')">B</div>
+      <div class="window-title">MultiVisionCode (MVC)</div>
+    </div>
+    <div class="window-body" style="padding: 10px;">
+      <div class="mvc-container">
+        <div class="mvc-toolbar">
+          <select id="mvc-lang" onchange="updateMVC()">
+            <option value="html">HTML</option>
+            <option value="js">JavaScript</option>
+            <option value="py">Python</option>
+            <option value="cs">C#</option>
+          </select>
+          <button class="run-btn" onclick="runMVCCode()">[RUN] Run Code</button>
+          <button onclick="showToast('MVC', 'File saved successfully!')">[SAVE] Save</button>
+        </div>
+        <div class="mvc-editor">
+          <div class="mvc-lines" id="mvc-lines">1</div>
+          <textarea class="mvc-code-area" id="mvc-code" spellcheck="false" oninput="updateMVC()" onkeydown="handleMVCKey(event)">&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;body style="background:#111; color:#0f0; font-family:sans-serif; display:flex; align-items:center; justify-content:center; height:100vh;"&gt;
+  &lt;h1&gt;Hello, UPC OS!&lt;/h1&gt;
+&lt;/body&gt;
+&lt;/html&gt;</textarea>
+        </div>
+      </div>
+    </div>
+    <div class="window-footer">made Gear ATF - Press Tab for indent</div>
+  </div>
+
+  <!-- Проводник -->
+  <div class="window" id="win-explorer" style="top:80px; left:150px; width:550px;">
+    <div class="window-header">
+      <div class="btn-close" onclick="closeWin('explorer')"></div>
+      <div class="btn-min" onclick="minimizeWin('explorer')"></div>
+      <div class="btn-expand" onclick="maximizeWin('explorer')">B</div>
+      <div class="window-title" id="explorer-title">File Explorer</div>
+    </div>
+    <div class="window-body">
+      <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+        <button class="form-btn" style="width: auto; padding: 8px 15px; margin: 0;" onclick="document.getElementById('folder-upload').click()">[+] Add File to Folder</button>
+        <input type="file" id="folder-upload" style="display: none;" multiple onchange="addFilesToFolder(this)">
+      </div>
+      <div class="file-list" id="explorer-file-list"></div>
+    </div>
+    <div class="window-footer">made Gear ATF</div>
+  </div>
+
+  <!-- UL/Li -->
+  <div class="window" id="win-ulli" style="top:60px; left:60px;">
+    <div class="window-header">
+      <div class="btn-close" onclick="closeWin('ulli')"></div>
+      <div class="btn-min" onclick="minimizeWin('ulli')"></div>
+      <div class="btn-expand" onclick="maximizeWin('ulli')">B</div>
+      <div class="window-title">UL/Li Center</div>
+    </div>
+    <div class="window-body">
+      <div class="tabs">
+        <div class="tab active" onclick="switchULLi(this, 'term')">Terminal</div>
+        <div class="tab" onclick="switchULLi(this, 'task')">Task Manager</div>
+      </div>
+      <div id="ulli-term" style="flex:1; display:flex; flex-direction:column;">
+        <div style="background:#000; color:#0f0; font-family:'Consolas',monospace; padding:10px; height:250px; overflow-y:auto; border-radius:4px;" id="termOutput">
+          <div>UPC Kernel v4.0 [Gear ATF Build]</div>
+          <div>Type 'help' for commands.</div>
+        </div>
+        <div style="display:flex; padding:5px; background:#111; border-radius: 0 0 4px 4px;">
+          <span style="color:#0f0; margin-right:5px;">$</span>
+          <input type="text" id="termInput" onkeydown="handleTerm(event)" style="background:transparent; border:none; color:#fff; width:80%; font-family:'Consolas',monospace;">
+        </div>
+      </div>
+      <div id="ulli-task" style="display:none;">
+        <div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span>System Idle</span>
+          <div style="width:100px; height:6px; background:#333; border-radius:3px; overflow:hidden;"><div id="cpu1" style="height:100%; background:#00d4ff; width:12%; transition: width 0.5s;"></div></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span>Desktop WM</span>
+          <div style="width:100px; height:6px; background:#333; border-radius:3px; overflow:hidden;"><div id="cpu2" style="height:100%; background:#00d4ff; width:5%; transition: width 0.5s;"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="window-footer">made Gear ATF</div>
+  </div>
+
+  <!-- BitRive -->
+  <div class="window" id="win-bitrive" style="top:80px; left:150px; width:650px;">
+    <div class="window-header">
+      <div class="btn-close" onclick="closeWin('bitrive')"></div>
+      <div class="btn-min" onclick="minimizeWin('bitrive')"></div>
+      <div class="btn-expand" onclick="maximizeWin('bitrive')">B</div>
+      <div class="window-title">BitRive Store</div>
+    </div>
+    <div class="window-body">
+      <div class="tabs">
+        <div class="tab active" onclick="switchBit(this, 'store')">Store</div>
+        <div class="tab" onclick="switchBit(this, 'browser')">[WEB] Browser</div>
+        <div class="tab" onclick="switchBit(this, 'pub')">Publish</div>
+      </div>
+      <div id="bit-store">
+        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:15px; margin-bottom:12px; display:flex; gap:15px; align-items:center;">
+          <div style="width:80px; height:80px; border-radius:6px; background:linear-gradient(135deg,#667eea,#764ba2); flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <h3 style="margin-bottom:4px; font-size:15px;">CyberQuest 2077</h3>
+            <p style="font-size:12px; opacity:0.6; margin-bottom:8px;">45 GB - RPG - UPC/UPH</p>
+            <button onclick="downloadToDesktop('CyberQuest_2077', 45000)" style="background:#00d4ff; color:#000; border:none; padding:8px 16px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px;">[DL] Download to Desktop</button>
+          </div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:15px; display:flex; gap:15px; align-items:center;">
+          <div style="width:80px; height:80px; border-radius:6px; background:linear-gradient(135deg,#f093fb,#f5576c); flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <h3 style="margin-bottom:4px; font-size:15px;">NeonEdit Pro</h3>
+            <p style="font-size:12px; opacity:0.6; margin-bottom:8px;">120 MB - Utility - UPC</p>
+            <button onclick="downloadToDesktop('NeonEdit_Pro', 120)" style="background:#00d4ff; color:#000; border:none; padding:8px 16px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px;">[DL] Download to Desktop</button>
+          </div>
+        </div>
+      </div>
+      <div id="bit-browser" style="display:none; flex:1; flex-direction:column;">
+        <div class="browser-bar">
+          <input type="text" id="browserUrl" value="https://example.com" placeholder="Enter URL...">
+          <button onclick="navigateBrowser()">Go</button>
+        </div>
+        <div class="quick-links">
+          <button onclick="document.getElementById('browserUrl').value='https://example.com'; navigateBrowser()">Example</button>
+          <button onclick="document.getElementById('browserUrl').value='https://www.wikipedia.org'; navigateBrowser()">Wikipedia</button>
+          <button onclick="document.getElementById('browserUrl').value='https://duckduckgo.com'; navigateBrowser()">DuckDuckGo</button>
+          <button onclick="document.getElementById('browserUrl').value='https://codepen.io/pen/'; navigateBrowser()">CodePen</button>
+          <button onclick="document.getElementById('browserUrl').value='https://news.ycombinator.com'; navigateBrowser()">Hacker News</button>
+        </div>
+        <div style="flex:1; position:relative; background:#fff; border-radius:4px; overflow:hidden;">
+          <iframe id="browserFrame" class="browser-frame" src="https://example.com" sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+          <div id="browserError" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:#fff; color:#333; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;">
+            <div style="font-size:40px; margin-bottom:10px;">[X]</div>
+            <h3>Site Refused Connection</h3>
+            <p>This website does not allow being opened inside other apps.</p>
+            <p>Try Wikipedia, DuckDuckGo, CodePen or Hacker News instead.</p>
+          </div>
+        </div>
+      </div>
+      <div id="bit-pub" style="display:none;">
+        <h3 style="margin-bottom:10px;">Publish App to BitRive</h3>
+        <input type="text" id="pubName" class="form-input" placeholder="App Name">
+        <input type="text" id="pubDesc" class="form-input" placeholder="Description">
+        <input type="number" id="pubSize" class="form-input" placeholder="Size (MB)">
+        <button class="form-btn" onclick="publishApp()">[PUB] Publish to Store</button>
+        <div id="published-list" style="margin-top:20px;"></div>
+      </div>
+    </div>
+    <div class="window-footer">made Gear ATF</div>
+  </div>
+
+  <!-- Gallery -->
+  <div class="window" id="win-gallery" style="top:120px; left:350px;">
+    <div class="window-header">
+      <div class="btn-close" onclick="closeWin('gallery')"></div>
+      <div class="btn-min" onclick="minimizeWin('gallery')"></div>
+      <div class="btn-expand" onclick="maximizeWin('gallery')">B</div>
+      <div class="window-title">Gallery</div>
+    </div>
+    <div class="window-body">
+      <label class="upload-btn" style="margin-bottom:10px; cursor:pointer;">
+        [UP] Upload Media (Images, Videos, GIFs)
+        <input type="file" id="mediaUpload" accept="image/*,video/*" multiple style="display:none">
+      </label>
+      <div id="mediaGrid" class="media-grid"></div>
+    </div>
+    <div class="window-footer">made Gear ATF</div>
+  </div>
+
+  <!-- SYSTEM -->
+  <div class="window" id="win-system" style="top:140px; left:200px;">
+    <div class="window-header">
+      <div class="btn-close" onclick="closeWin('system')"></div>
+      <div class="btn-min" onclick="minimizeWin('system')"></div>
+      <div class="btn-expand" onclick="maximizeWin('system')">B</div>
+      <div class="window-title">SYSTEM Settings</div>
+    </div>
+    <div class="window-body">
+      <div class="setting-group">
+        <h3>[MOUSE] Cursor Style</h3>
+        <select class="form-input" onchange="setCursor(this.value)">
+          <option value="auto">Default Arrow</option>
+          <option value="crosshair">Crosshair</option>
+          <option value="progress">Loading Spinner</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <h3>[BG] Wallpaper</h3>
+        <div class="wp-grid">
+          <div class="wp-opt selected" style="background:linear-gradient(135deg,#0a0a14,#141428)" onclick="setWallpaper('linear-gradient(135deg,#0a0a14,#141428)', this)"></div>
+          <div class="wp-opt" style="background:linear-gradient(135deg,#232526,#414345)" onclick="setWallpaper('linear-gradient(135deg,#232526,#414345)', this)"></div>
+          <div class="wp-opt" style="background:linear-gradient(135deg,#000428,#004e92)" onclick="setWallpaper('linear-gradient(135deg,#000428,#004e92)', this)"></div>
+          <div class="wp-opt" style="background:linear-gradient(135deg,#200122,#6f0000)" onclick="setWallpaper('linear-gradient(135deg,#200122,#6f0000)', this)"></div>
+        </div>
+        <label class="upload-btn" for="wpUpload" style="cursor:pointer;">[UP] Upload Custom Wallpaper</label>
+        <input type="file" id="wpUpload" accept="image/*" style="display:none">
+      </div>
+    </div>
+    <div class="window-footer">made Gear ATF</div>
+  </div>
+</div>
+
+<!-- ДОК -->
+<div class="dock" id="mainDock">
+  <div class="dock-item" onclick="openWin('bitrive')" data-app="bitrive">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    <div class="label">BitRive</div>
+  </div>
+  <div class="dock-item" onclick="openWin('mvc')" data-app="mvc">
+    <svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+    <div class="label">MVC Code</div>
+  </div>
+  <div class="dock-item" onclick="openWin('ulli')" data-app="ulli">
+    <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+    <div class="label">UL/Li</div>
+  </div>
+  <div class="dock-item" onclick="openWin('gallery')" data-app="gallery">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+    <div class="label">Gallery</div>
+  </div>
+  <div class="dock-item" onclick="openWin('system')" data-app="system">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <div class="label">SYSTEM</div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('1. UPC OS: DOM Ready');
+
+  // ЗАГРУЗКА
+  setTimeout(function() {
+    document.querySelector('.boot-logo-text').style.display = 'none';
+    var gear = document.getElementById('gearLogo');
+    gear.style.display = 'block';
+    setTimeout(function() { gear.querySelector('.gear-svg').classList.add('burning'); }, 2000);
+    setTimeout(function() {
+      document.getElementById('boot-screen').classList.remove('active');
+      document.getElementById('login-screen').classList.add('active');
+      document.getElementById('loginNick').focus();
+      console.log('2. Login screen shown');
+    }, 4500);
+  }, 2000);
+
+  // === ВХОД (МАКСИМАЛЬНО ПРОСТОЙ И НАДЁЖНЫЙ) ===
+  var loginBtn = document.getElementById('loginBtn');
+  var guestBtn = document.getElementById('guestBtn');
+  var loginPass = document.getElementById('loginPass');
+
+  function doLogin(guest) {
+    console.log('3. doLogin called, guest=', guest);
+    
+    var pass = loginPass.value;
+    if (!guest && !pass) {
+      alert('Please enter a password!');
+      return;
+    }
+
+    var acct = document.getElementById('accountType').value;
+    var nick = document.getElementById('loginNick').value || 'Guest';
+    var badge = document.getElementById('userBadge');
+
+    if (acct === 'private') {
+      badge.textContent = '[LOCK] Gear Private';
+      badge.className = 'user-badge private';
+    } else {
+      badge.textContent = nick;
+      badge.className = 'user-badge';
+    }
+    console.log('4. Badge updated to:', badge.textContent);
+
+    // МГНОВЕННОЕ переключение без анимации (для стабильности в песочнице)
+    document.getElementById('login-screen').classList.remove('active');
+    document.getElementById('desktop-area').classList.add('active');
+    console.log('5. Desktop activated');
+
+    showToast('Welcome', 'Logged in as ' + badge.textContent);
+    startTaskManager();
+    console.log('6. Login complete!');
+  }
+
+  loginBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    doLogin(false);
+  });
+
+  guestBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    doLogin(true);
+  });
+
+  loginPass.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      doLogin(false);
+    }
+  });
+
+  document.getElementById('loginNick').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loginPass.focus();
+    }
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    return false;
+  });
+
+  // === ВЫКЛЮЧЕНИЕ ===
+  window.shutdownOS = function() {
+    console.log('Shutting down...');
+    document.getElementById('desktop-area').classList.remove('active');
+    document.getElementById('mainDock').style.display = 'none';
+    document.getElementById('shutdown-screen').classList.add('active');
+    
+    setTimeout(function() {
+      location.reload(); // Перезагрузка системы
+    }, 3000);
+  };
+
+  // ОКНА
+  window.openWin = function(id) {
+    var win = document.getElementById('win-' + id);
+    if (!win) return;
+    win.classList.add('active');
+    var wins = document.querySelectorAll('.window');
+    for (var i = 0; i < wins.length; i++) wins[i].style.zIndex = 100;
+    win.style.zIndex = 200;
+  };
+  window.closeWin = function(id) { document.getElementById('win-' + id).classList.remove('active'); };
+  window.minimizeWin = function(id) { document.getElementById('win-' + id).classList.remove('active'); };
+  window.maximizeWin = function(id) { document.getElementById('win-' + id).classList.toggle('maximized'); };
+
+  // Перетаскивание
+  var headers = document.querySelectorAll('.window-header');
+  for (var i = 0; i < headers.length; i++) {
+    (function(h) {
+      var isDown = false, offX, offY;
+      var win = h.parentElement;
+      h.addEventListener('mousedown', function(e) {
+        if (e.target.classList.contains('btn-close') || e.target.classList.contains('btn-min') || e.target.classList.contains('btn-expand')) return;
+        isDown = true;
+        offX = e.clientX - win.offsetLeft;
+        offY = e.clientY - win.offsetTop;
+        win.style.zIndex = 200;
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (!isDown) return;
+        win.style.left = (e.clientX - offX) + 'px';
+        win.style.top = (e.clientY - offY) + 'px';
+      });
+      document.addEventListener('mouseup', function() { isDown = false; });
+    })(headers[i]);
+  }
+
+  // СКАЧИВАНИЕ
+  window.downloadToDesktop = function(name, size) {
+    var content = 'UPC Package: ' + name + '\nSize: ' + size + 'MB\nGear ATF Certified\nDate: ' + new Date().toISOString();
+    var blob = new Blob([content], { type: 'application/octet-stream' });
+    var url = window.URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = name + '.fy';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
+    var desktop = document.getElementById('desktop-area');
+    var shortcut = document.createElement('div');
+    shortcut.className = 'desktop-folder';
+    var count = document.querySelectorAll('.desktop-folder').length;
+    var col = count % 6;
+    var row = Math.floor(count / 6);
+    shortcut.style.left = (30 + col * 95) + 'px';
+    shortcut.style.top = (60 + row * 105) + 'px';
+    shortcut.innerHTML = '<div class="folder-icon">[APP]</div><div class="folder-name">' + name + '.fy</div>';
+    shortcut.onclick = function(e) {
+      e.stopPropagation();
+      simulateInstall(shortcut, name);
+    };
+    desktop.appendChild(shortcut);
+    showToast('Download Complete', name + '.fy placed on Desktop!');
+  };
+
+  function simulateInstall(element, name) {
+    var overlay = document.createElement('div');
+    overlay.className = 'install-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = '<div style="color:#fff; font-weight:bold; margin-bottom:5px;">Installing ' + name + '...</div><div class="progress-bar"><div class="progress-fill" id="prog-' + name + '"></div></div>';
+    element.appendChild(overlay);
+    var progress = 0;
+    var interval = setInterval(function() {
+      progress += Math.random() * 15;
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(interval);
+        setTimeout(function() {
+          overlay.remove();
+          showToast('Launch', 'Starting ' + name + '...');
+        }, 500);
+      }
+      var bar = document.getElementById('prog-' + name);
+      if (bar) bar.style.width = progress + '%';
+    }, 200);
+  }
+
+  // ПАПКИ
+  var folderData = {};
+  var currentOpenFolder = null;
+  var folderCount = 0;
+
+  window.createFolder = function() {
+    folderCount++;
+    var name = 'New Folder ' + folderCount;
+    var desktop = document.getElementById('desktop-area');
+    var folder = document.createElement('div');
+    folder.className = 'desktop-folder';
+    var count = document.querySelectorAll('.desktop-folder').length;
+    var col = count % 6;
+    var row = Math.floor(count / 6);
+    folder.style.left = (30 + col * 95) + 'px';
+    folder.style.top = (60 + row * 105) + 'px';
+    folder.innerHTML = '<div class="folder-icon">[DIR]</div><div class="folder-name">' + name + '</div>';
+    folder.ondblclick = function() { openFolder(name); };
+    desktop.appendChild(folder);
+    folderData[name] = [];
+    showToast('System', 'Folder "' + name + '" created');
+  };
+
+  window.openFolder = function(folderName) {
+    currentOpenFolder = folderName;
+    document.getElementById('explorer-title').textContent = '[DIR] ' + folderName;
+    renderFolderContents();
+    openWin('explorer');
+  };
+
+  function renderFolderContents() {
+    var list = document.getElementById('explorer-file-list');
+    list.innerHTML = '';
+    var files = folderData[currentOpenFolder] || [];
+    if (files.length === 0) {
+      list.innerHTML = '<div style="padding:30px; text-align:center; opacity:0.5; font-size:14px;">[DIR] This folder is empty.<br>Click "[+] Add File" to add content.</div>';
+      return;
+    }
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      var item = document.createElement('div');
+      item.className = 'file-item';
+      var icon = '[FILE]';
+      if (file.name.endsWith('.fy')) icon = '[APP]';
+      if (file.name.endsWith('.mp4') || file.name.endsWith('.gif')) icon = '[VID]';
+      if (file.name.endsWith('.html') || file.name.endsWith('.js')) icon = '[CODE]';
+      item.innerHTML = '<span class="file-icon">' + icon + '</span><span style="flex:1">' + file.name + '</span><span style="opacity:0.5; font-size:12px;">' + (file.size || 'Unknown') + '</span>';
+      item.ondblclick = (function(fn) { return function() { showToast('File', 'Opening ' + fn + '...'); }; })(file.name);
+      list.appendChild(item);
+    }
+  }
+
+  window.addFilesToFolder = function(input) {
+    if (!currentOpenFolder || !input.files.length) return;
+    var files = Array.from(input.files);
+    for (var i = 0; i < files.length; i++) {
+      folderData[currentOpenFolder].push({ name: files[i].name, size: (files[i].size / 1024 / 1024).toFixed(2) + ' MB' });
+    }
+    renderFolderContents();
+    showToast('Success', 'Added ' + files.length + ' file(s) to "' + currentOpenFolder + '"');
+    input.value = '';
+  };
+
+  // MVC
+  window.updateMVC = function() {
+    var textarea = document.getElementById('mvc-code');
+    var lines = document.getElementById('mvc-lines');
+    var lineCount = textarea.value.split('\n').length;
+    var nums = [];
+    for (var i = 1; i <= lineCount; i++) nums.push(i);
+    lines.innerHTML = nums.join('<br>');
+  };
+
+  window.handleMVCKey = function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var start = e.target.selectionStart;
+      var end = e.target.selectionEnd;
+      e.target.value = e.target.value.substring(0, start) + '  ' + e.target.value.substring(end);
+      e.target.selectionStart = e.target.selectionEnd = start + 2;
+      updateMVC();
+    }
+  };
+
+  window.runMVCCode = function() {
+    var code = document.getElementById('mvc-code').value;
+    var lang = document.getElementById('mvc-lang').value;
+    if (lang !== 'html') {
+      showToast('MVC', 'Live preview available for HTML only.');
+      return;
+    }
+    try {
+      var previewWindow = window.open('', 'MVC_Preview', 'width=800,height=600');
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.document.write(code);
+        previewWindow.document.close();
+        showToast('MVC', '[OK] Code running in preview window!');
+      } else {
+        throw new Error('Popup blocked');
+      }
+    } catch (e) {
+      showToast('MVC', '[!] Popup blocked! Allow popups for MVC preview.');
+    }
+  };
+  setTimeout(updateMVC, 100);
+
+  // БРАУЗЕР
+  window.navigateBrowser = function() {
+    var url = document.getElementById('browserUrl').value.trim();
+    if (!url.startsWith('http')) url = 'https://' + url;
+    var frame = document.getElementById('browserFrame');
+    var error = document.getElementById('browserError');
+    error.style.display = 'none';
+    frame.src = url;
+    setTimeout(function() {
+      try {
+        if (frame.contentDocument && frame.contentDocument.body && frame.contentDocument.body.innerHTML === '') {
+          error.style.display = 'flex';
+        }
+      } catch (e) { /* cross-origin = success */ }
+    }, 2000);
+  };
+
+  // ПУБЛИКАЦИЯ
+  window.publishApp = function() {
+    var name = document.getElementById('pubName').value;
+    var desc = document.getElementById('pubDesc').value;
+    var size = document.getElementById('pubSize').value;
+    if (!name || !size) {
+      showToast('Error', 'Please fill Name and Size!');
+      return;
+    }
+    var list = document.getElementById('published-list');
+    var card = document.createElement('div');
+    card.style.cssText = 'background:rgba(0,212,255,0.1); border:1px solid #00d4ff; padding:10px; border-radius:4px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;';
+    card.innerHTML = '<div><strong>' + name + '</strong><br><small style="opacity:0.7">' + (desc || 'No description') + ' - ' + size + ' MB</small></div><span style="color:#4ade80; font-size:12px;">[OK] Published</span>';
+    list.prepend(card);
+    document.getElementById('pubName').value = '';
+    document.getElementById('pubDesc').value = '';
+    document.getElementById('pubSize').value = '';
+    showToast('Success', '"' + name + '" published to BitRive Store!');
+  };
+
+  // ГАЛЕРЕЯ
+  document.getElementById('mediaUpload').addEventListener('change', function(e) {
+    var grid = document.getElementById('mediaGrid');
+    var files = Array.from(e.target.files);
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      var url = URL.createObjectURL(file);
+      var item = document.createElement('div');
+      item.className = 'media-item';
+      var label = document.createElement('div');
+      label.className = 'media-type-label';
+      var mediaElement;
+      if (file.type.startsWith('video/')) {
+        mediaElement = document.createElement('video');
+        mediaElement.src = url;
+        label.textContent = '[VID]';
+      } else {
+        mediaElement = document.createElement('img');
+        mediaElement.src = url;
+        label.textContent = file.name.toLowerCase().endsWith('.gif') ? '[GIF]' : '[IMG]';
+      }
+      item.appendChild(mediaElement);
+      item.appendChild(label);
+      (function(u, t) {
+        item.onclick = function() { openMediaViewer(u, t); };
+      })(url, file.type.startsWith('video/') ? 'video' : 'image');
+      grid.appendChild(item);
+    }
+    this.value = '';
+    showToast('Upload', files.length + ' file(s) added to Gallery');
+  });
+
+  window.openMediaViewer = function(url, type) {
+    var modal = document.getElementById('mediaModal');
+    var content = document.getElementById('mediaModalContent');
+    content.innerHTML = '';
+    if (type === 'video') {
+      var v = document.createElement('video');
+      v.src = url;
+      v.controls = true;
+      v.autoplay = true;
+      v.className = 'media-modal-content';
+      content.appendChild(v);
+    } else {
+      var img = document.createElement('img');
+      img.src = url;
+      img.className = 'media-modal-content';
+      content.appendChild(img);
+    }
+    modal.classList.add('active');
+  };
+  window.closeMediaModal = function() {
+    document.getElementById('mediaModalContent').innerHTML = '';
+    document.getElementById('mediaModal').classList.remove('active');
+  };
+
+  // SYSTEM
+  window.setWallpaper = function(bg, el) {
+    document.getElementById('desktop-area').style.background = bg;
+    var opts = document.querySelectorAll('.wp-opt');
+    for (var i = 0; i < opts.length; i++) opts[i].classList.remove('selected');
+    if (el) el.classList.add('selected');
+  };
+  document.getElementById('wpUpload').addEventListener('change', function(e) {
+    if (e.target.files[0]) {
+      var reader = new FileReader();
+      reader.onload = function(ev) { setWallpaper('url(' + ev.target.result + ')'); };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  });
+  window.setCursor = function(c) { document.body.style.cursor = c; };
+
+  // ВКЛАДКИ
+  window.switchULLi = function(el, tab) {
+    var tabs = document.querySelectorAll('#win-ulli .tab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+    el.classList.add('active');
+    document.getElementById('ulli-term').style.display = 'none';
+    document.getElementById('ulli-task').style.display = 'none';
+    document.getElementById('ulli-' + tab).style.display = 'block';
+  };
+  window.switchBit = function(el, tab) {
+    var tabs = document.querySelectorAll('#win-bitrive .tab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+    el.classList.add('active');
+    document.getElementById('bit-store').style.display = 'none';
+    document.getElementById('bit-browser').style.display = 'none';
+    document.getElementById('bit-pub').style.display = 'none';
+    var target = document.getElementById('bit-' + tab);
+    if (target) target.style.display = tab === 'browser' ? 'flex' : 'block';
+  };
+
+  // ТЕРМИНАЛ
+  window.handleTerm = function(e) {
+    if (e.key === 'Enter') {
+      var val = e.target.value;
+      var out = document.getElementById('termOutput');
+      out.innerHTML += '<div>$ ' + val + '</div>';
+      var cmd = val.toLowerCase().trim();
+      if (cmd === 'help') out.innerHTML += '<div>Commands: help, sysinfo, clear, date, whoami</div>';
+      else if (cmd === 'sysinfo') out.innerHTML += '<div>CPU: Quantum Core i9 | RAM: 64GB DDR6 | GPU: RTX 9090 Ti</div>';
+      else if (cmd === 'clear') out.innerHTML = '';
+      else if (cmd === 'date') out.innerHTML += '<div>' + new Date().toLocaleString() + '</div>';
+      else if (cmd === 'whoami') out.innerHTML += '<div>' + document.getElementById('userBadge').textContent + '@upc</div>';
+      else if (cmd) out.innerHTML += '<div style="color:#f55;">Unknown command: ' + cmd + '</div>';
+      e.target.value = '';
+      out.scrollTop = out.scrollHeight;
+    }
+  };
+
+  // ДИСПЕТЧЕР
+  var taskInterval;
+  function startTaskManager() {
+    if (taskInterval) clearInterval(taskInterval);
+    taskInterval = setInterval(function() {
+      var ids = ['cpu1', 'cpu2'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (el) el.style.width = Math.floor(Math.random() * 80 + 5) + '%';
+      }
+    }, 1000);
+  }
+
+  // УВЕДОМЛЕНИЯ
+  function showToast(title, msg) {
+    var container = document.getElementById('toast-container');
+    var toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = '<strong>' + title + '</strong><br><small>' + msg + '</small>';
+    container.appendChild(toast);
+    setTimeout(function() {
+      toast.style.opacity = '0';
+      setTimeout(function() { toast.remove(); }, 300);
+    }, 3000);
+  }
+
+  // КОНТЕКСТНОЕ МЕНЮ
+  document.getElementById('desktop-area').addEventListener('contextmenu', function(e) {
+    if (e.target.closest('.window') || e.target.closest('.dock') || e.target.closest('.desktop-folder') || e.target.closest('.power-btn')) return;
+    e.preventDefault();
+    var menu = document.getElementById('context-menu');
+    menu.style.display = 'block';
+    menu.style.left = e.pageX + 'px';
+    menu.style.top = e.pageY + 'px';
+  });
+  window.hideContext = function() { document.getElementById('context-menu').style.display = 'none'; };
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('#context-menu')) hideContext();
+  });
+
+  // ЧАСЫ
+  setInterval(function() {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+  }, 1000);
+
+  // ГОРЯЧИЕ КЛАВИШИ
+  var pressedKeys = new Set();
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if (e.repeat) return;
+    var key = e.key.toLowerCase();
+    pressedKeys.add(key);
+    if (pressedKeys.has('g') && pressedKeys.has('f') && pressedKeys.has('d')) {
+      e.preventDefault();
+      document.getElementById('mainDock').classList.toggle('hidden');
+      showToast('Hotkey', document.getElementById('mainDock').classList.contains('hidden') ? 'Dock hidden' : 'Dock shown');
+      pressedKeys.clear();
+    }
+    if (pressedKeys.has('d') && pressedKeys.has('s') && pressedKeys.has('p')) {
+      e.preventDefault();
+      openWin('ulli');
+      setTimeout(function() {
+        var tabs = document.querySelectorAll('#win-ulli .tab');
+        if (tabs[1]) switchULLi(tabs[1], 'task');
+      }, 100);
+      showToast('Hotkey', 'Task Manager opened');
+      pressedKeys.clear();
+    }
+  });
+  document.addEventListener('keyup', function(e) {
+    pressedKeys.delete(e.key.toLowerCase());
+  });
+});
+</script>
+</body>
+</html>
